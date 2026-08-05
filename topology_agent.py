@@ -1,8 +1,44 @@
 import time
+import random
 from gqlalchemy import Memgraph
 
 # Connect to Memgraph
 memgraph = Memgraph(host="127.0.0.1", port=7687)
+
+def inject_synthetic_ring(ring_size: int = 4, base_amount: float = 9500.0) -> list[dict]:
+    """
+    Generates and executes Cypher queries to inject a synthetic multi-node 
+    laundering ring (A -> B -> C -> D -> A) into Memgraph over standard PaySim data.
+    """
+    timestamp = int(time.time())
+    mules = [f"MULE_{timestamp}_{i}" for i in range(ring_size)]
+    
+    print(f"\n⚡ [Topology Agent] Injecting {ring_size}-Node Synthetic Ring: {' ➔ '.join(mules)}")
+    
+    # Create ring nodes and directed edges in Memgraph
+    for i in range(ring_size):
+        src = mules[i]
+        dst = mules[(i + 1) % ring_size]
+        
+        inject_query = f"""
+        MERGE (s:Account {{id: '{src}'}})
+        ON CREATE SET s.balance = 150.0, s.risk_score = 0.85
+        MERGE (r:Account {{id: '{dst}'}})
+        ON CREATE SET r.balance = 150.0, r.risk_score = 0.85
+        CREATE (s)-[:TRANSFERRED {{
+            amount: {base_amount},
+            type: 'TRANSFER',
+            is_fraud_ground_truth: 1,
+            is_synthetic_ring: 1,
+            timestamp: '{timestamp}'
+        }}]->(r);
+        """
+        try:
+            memgraph.execute(inject_query)
+        except Exception as e:
+            print(f"⚠️ [Topology Agent] Ring injection warning: {e}")
+            
+    return mules
 
 def run_louvain_community_analysis():
     """
@@ -17,7 +53,10 @@ def run_louvain_community_analysis():
         """
         memgraph.execute(louvain_query)
 
-        # 2. Calculate community fraud density & lower threshold for high-risk clusters
+        # 2. Calculate community fraud density & lower threshold for high-risk clusters.
+        # Explanation: In high-risk communities (mule density > 30%), we dynamically lower the 
+        # detection threshold to 0.35. This means accounts in risky neighborhoods are flagged 
+        # with lower confidence requirements, reflecting guilt-by-association risk.
         density_query = """
         MATCH (a:Account)
         WITH a.community_id AS community, 
@@ -72,7 +111,7 @@ def run_topology_agent():
         else:
             print("🟢 No active laundering cycles detected in current window.", end="\r")
 
-        # Run Louvain Community Analysis every 10 iterations (~30 seconds)
+        # Periodically run Louvain Community Analysis (~30 seconds)
         cycle_check_counter += 1
         if cycle_check_counter % 10 == 0:
             run_louvain_community_analysis()
@@ -80,4 +119,6 @@ def run_topology_agent():
         time.sleep(3)
 
 if __name__ == "__main__":
+    # Optional test injection on startup:
+    # inject_synthetic_ring(ring_size=4)
     run_topology_agent()
