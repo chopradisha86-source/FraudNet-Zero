@@ -38,7 +38,29 @@ share/python-wheels/
 MANIFEST
 
 # ==========================================
-# Testing & Code Quality
+# Datasets, ML Artifacts & Large Files
+# ==========================================
+transactions.csv
+*.csv
+*.parquet
+*.feather
+*.h5
+*.pkl
+*.joblib
+*.onnx
+
+# ==========================================
+# Local Databases & Persistent Storage
+# ==========================================
+*.db
+*.sqlite
+*.sqlite3
+users.db
+memgraph_data/
+mg_import/
+
+# ==========================================
+# Testing, Code Quality & Cache
 # ==========================================
 .pytest_cache/
 .coverage
@@ -50,7 +72,7 @@ htmlcov/
 .mypy_cache/
 
 # ==========================================
-# Docker & Kafka / Streaming Logs
+# Docker, Streaming & Service Logs
 # ==========================================
 *.log
 logs/
@@ -82,15 +104,7 @@ zookeeper-data/
 .Trashes
 ehthumbs.db
 Thumbs.db
-transactions.csv
-
-# ==========================================
-# Local Databases & Persistent Storage
-# ==========================================
-*.db
-*.sqlite
-*.sqlite3
-users.db
+Desktop.ini
 
 # ==========================================
 # Frontend / Node (React + Vite)

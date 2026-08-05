@@ -1,6 +1,17 @@
+import os
 import json
 import time
 from gqlalchemy import Memgraph
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
+
+# Configure Gemini with API Key from .env
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 # Connect to running Memgraph container
 memgraph = Memgraph(host="127.0.0.1", port=7687)
@@ -30,7 +41,7 @@ def fetch_account_forensics(account_id):
 
 def generate_sar_summary(forensics):
     """
-    Generates a structured forensic summary narrative.
+    Generates a structured forensic summary narrative using Gemini 1.5 Flash.
     """
     suspect = forensics["suspect_id"]
     volume = forensics["total_volume"]
@@ -39,29 +50,47 @@ def generate_sar_summary(forensics):
     ips = forensics["used_ips"]
     devices = forensics["used_devices"]
 
-    report = f"""
+    # Use active model
+    model = genai.GenerativeModel("gemini-1.5-flash")
+
+    prompt = f"""
+    You are a Lead Financial Crime Compliance Investigator. Analyze the following Memgraph forensic data for target account {suspect}:
+
+    - Target Account ID: {suspect}
+    - Total Volume Transacted: ${volume:,.2f} USD across {tx_count} transactions
+    - Connected Peer Nodes: {len(peers)} accounts ({', '.join(peers[:5]) if peers else 'None'})
+    - Device Fingerprints: {', '.join(devices) if devices else 'None'}
+    - IP Footprint: {', '.join(ips) if ips else 'None'}
+
+    Write an official, high-precision Suspicious Activity Report (SAR) narrative formatted cleanly with the following headings:
+    1. SUMMARY STATEMENT
+    2. KEY EVIDENCE & TOPOLOGY
+    3. FORENSIC NARRATIVE (Analyze velocity layering, IP/Device overlap, and money laundering indicators)
+    4. RECOMMENDED COMPLIANCE ACTION
+    """
+
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        print(f"❌ Gemini Generation Error: {e}")
+        # Fallback template if API fails
+        return f"""
 ================================================================================
-📄 AUTOMATED SUSPICIOUS ACTIVITY REPORT (SAR)
+📄 AUTOMATED SUSPICIOUS ACTIVITY REPORT (SAR) [FALLBACK]
 ================================================================================
 Target Subject ID : {suspect}
 Risk Assessment   : CRITICAL (Automated FraudNet Zero Alert)
 Total Volume      : ${volume:,.2f} USD ({tx_count} transactions)
 
 🔍 KEY EVIDENCE & TOPOLOGY:
-  • Connected Nodes  : {len(peers)} peers ({', '.join(peers[:3]) if peers else 'None'}...)
+  • Connected Nodes  : {len(peers)} peers ({', '.join(peers[:3]) if peers else 'None'})
   • Shared Hardware  : Devices [{', '.join(devices)}]
   • IP Footprint     : IPs [{', '.join(ips)}]
-
-💡 FORENSIC NARRATIVE:
-  Account {suspect} exhibits high-velocity transactional layering behavior. 
-  Multiple outgoing transfers route through interconnected peer nodes using 
-  overlapping IP address spaces and device IDs, strongly indicating a 
-  mule network operating in a closed micro-layering loop.
 
 RECOMMENDED ACTION: Freeze accounts immediately and submit FinCEN Form 111.
 ================================================================================
 """
-    return report
 
 def run_llm_agent():
     print("🤖 Explainable AI / SAR Forensic Agent Active...\n")
