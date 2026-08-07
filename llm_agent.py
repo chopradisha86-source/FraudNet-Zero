@@ -1,9 +1,15 @@
 import os
 import json
 import time
+import logging
 from gqlalchemy import Memgraph
 import google.generativeai as genai
+from google.api_core.exceptions import ResourceExhausted, GoogleAPICallError
 from dotenv import load_dotenv
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env
 load_dotenv()
@@ -36,12 +42,13 @@ def fetch_account_forensics(account_id):
             return results[0]
         return None
     except Exception as e:
-        print(f"❌ Error fetching forensics: {e}")
+        logger.error(f"❌ Error fetching forensics: {e}")
         return None
 
 def generate_sar_summary(forensics):
     """
-    Generates a structured forensic summary narrative using Gemini 1.5 Flash.
+    Generates a structured forensic summary narrative using Gemini 2.5 Flash Lite.
+    Falls back gracefully on rate limit / quota errors.
     """
     suspect = forensics["suspect_id"]
     volume = forensics["total_volume"]
@@ -50,8 +57,8 @@ def generate_sar_summary(forensics):
     ips = forensics["used_ips"]
     devices = forensics["used_devices"]
 
-    # Use active model
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    # Use lightweight model for higher throughput and rate limits
+    model = genai.GenerativeModel("gemini-2.5-flash")
 
     prompt = f"""
     You are a Lead Financial Crime Compliance Investigator. Analyze the following Memgraph forensic data for target account {suspect}:
@@ -72,25 +79,28 @@ def generate_sar_summary(forensics):
     try:
         response = model.generate_content(prompt)
         return response.text
-    except Exception as e:
-        print(f"❌ Gemini Generation Error: {e}")
-        # Fallback template if API fails
+    except (ResourceExhausted, GoogleAPICallError) as e:
+        logger.warning(f"⚠️ Gemini API rate limited or unavailable ({str(e)}). Serving fallback SAR draft.")
+        # Fallback template if API limits are hit
         return f"""
 ================================================================================
-📄 AUTOMATED SUSPICIOUS ACTIVITY REPORT (SAR) [FALLBACK]
+📄 AUTOMATED SUSPICIOUS ACTIVITY REPORT (SAR) [FALLBACK ENGINE]
 ================================================================================
 Target Subject ID : {suspect}
-Risk Assessment   : CRITICAL (Automated FraudNet Zero Alert)
+Risk Assessment   : CRITICAL (Automated FraudNet-Zero Alert)
 Total Volume      : ${volume:,.2f} USD ({tx_count} transactions)
 
 🔍 KEY EVIDENCE & TOPOLOGY:
   • Connected Nodes  : {len(peers)} peers ({', '.join(peers[:3]) if peers else 'None'})
-  • Shared Hardware  : Devices [{', '.join(devices)}]
-  • IP Footprint     : IPs [{', '.join(ips)}]
+  • Shared Hardware  : Devices [{', '.join(devices) if devices else 'None'}]
+  • IP Footprint     : IPs [{', '.join(ips) if ips else 'None'}]
 
-RECOMMENDED ACTION: Freeze accounts immediately and submit FinCEN Form 111.
+RECOMMENDED ACTION: Freeze target account immediately and initiate legal audit.
 ================================================================================
 """
+    except Exception as e:
+        logger.error(f"❌ Unexpected error in SAR generation: {e}")
+        return f"Error generating SAR narrative: {str(e)}"
 
 def run_llm_agent():
     print("🤖 Explainable AI / SAR Forensic Agent Active...\n")

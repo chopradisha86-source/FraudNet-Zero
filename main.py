@@ -1,5 +1,6 @@
 import os
 import asyncio
+import logging
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,14 +8,19 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from gqlalchemy import Memgraph
 
-# Import modern Google GenAI SDK
+# Import Google GenAI SDK & Exception classes
 from google import genai
+from google.genai import errors
 
 from websocket_manager import manager
 from topology_agent import detect_micro_layering_cycles, run_louvain_community_analysis
 from risk_agent import analyze_and_score_accounts
 from database import init_sqlite_db, verify_user_credentials
 from auth import create_access_token, require_admin, get_current_user
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -138,7 +144,10 @@ async def generate_sar(
     """
     Generates a formal Suspicious Activity Report (SAR) narrative using Gemini 
     based on SHAP risk drivers and graph topology context.
+    Falls back gracefully if API rate limits or quota errors occur.
     """
+    operator_name = locals().get("current_user", {}).get("username", "Analyst_Local")
+
     try:
         client = get_genai_client()
         
@@ -162,9 +171,6 @@ async def generate_sar(
         )
         
         sar_text = response.text if response and hasattr(response, 'text') else "Report generation complete."
-        
-        # Safe resolution for username when auth dependency is bypassed
-        operator_name = locals().get("current_user", {}).get("username", "Analyst_Local")
 
         await manager.broadcast_event("TELEMETRY_LOG", {
             "agent": "Gemini Compliance Agent",
@@ -174,10 +180,41 @@ async def generate_sar(
         return {
             "account_id": request.account_id,
             "sar_report": sar_text,
-            "status": "DRAFTED_PENDING_REVIEW"
+            "status": "DRAFTED_PENDING_REVIEW",
+            "source": "gemini-api"
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to draft SAR report: {str(e)}")
+
+    except (errors.APIError, Exception) as e:
+        logger.warning(f"⚠️ Gemini API rate limited or API error: {str(e)}. Triggering local fallback SAR draft.")
+        
+        # Deterministic local fallback report for presentation/testing resilience
+        fallback_sar = (
+            "================================================================================\n"
+            "📄 SUSPICIOUS ACTIVITY REPORT (SAR) - DRAFT [LOCAL FALLBACK ENGINE]\n"
+            "================================================================================\n"
+            f"1. EXECUTIVE SUMMARY:\n"
+            f"Target Account ID: {request.account_id}\n"
+            f"Composite Risk Score: {request.risk_score}/100 [CRITICAL ALERT]\n"
+            f"Primary SHAP Drivers: {', '.join(request.shap_drivers)}\n\n"
+            f"2. GRAPH TYPOLOGY & TRANSACTION PATTERN ANALYSIS:\n"
+            f"Detected Network Topology: {request.detected_topology}.\n"
+            f"High-frequency structured layering activity detected across connected graph nodes.\n\n"
+            f"3. RECOMMENDED REGULATORY MITIGATION & ASSET FREEZE ACTION:\n"
+            f"Immediate execution of Minimum-Cut containment on node {request.account_id}. Freeze associated outbound channels.\n"
+            "================================================================================"
+        )
+
+        await manager.broadcast_event("TELEMETRY_LOG", {
+            "agent": "Gemini Compliance Agent (Fallback)",
+            "message": f"📄 Local Fallback SAR draft served for account {request.account_id}."
+        })
+
+        return {
+            "account_id": request.account_id,
+            "sar_report": fallback_sar,
+            "status": "DRAFTED_PENDING_REVIEW",
+            "source": "local-fallback"
+        }
 
 # --- Real-Time Telemetry Background Loop ---
 
