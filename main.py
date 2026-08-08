@@ -99,7 +99,7 @@ async def trigger_louvain_analysis(current_user: dict = Depends(get_current_user
 @app.post("/api/v1/containment/execute")
 async def execute_precision_isolation(
     request: FreezeRequest,
- #   current_user: dict = Depends(require_admin)  # 🔒 Protected: Requires ADMIN permissions
+    current_user: dict = Depends(require_admin)  # 🔒 Protected: Requires ADMIN permissions
 ):
     """
     Automated Containment Agent: Freezes specified mule accounts in Memgraph 
