@@ -139,7 +139,7 @@ async def execute_precision_isolation(
 @app.post("/api/v1/compliance/generate-sar")
 async def generate_sar(
     request: SARRequest,
-    # current_user: dict = Depends(get_current_user)  # Uncomment to re-enable auth requirement
+    current_user: dict = Depends(get_current_user)  # Uncomment to re-enable auth requirement
 ):
     """
     Generates a formal Suspicious Activity Report (SAR) narrative using Gemini 
