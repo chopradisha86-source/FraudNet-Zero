@@ -1,10 +1,11 @@
 import json
+import time
 from confluent_kafka import Consumer, KafkaError
 from gqlalchemy import Memgraph
 
-# --- UPDATED MODULAR IMPORTS ---
-from gcn_core.topology_agent import detect_micro_layering_cycles, run_louvain_community_analysis
-from agents.risk_agent import analyze_and_score_accounts
+# --- MODULAR IMPORTS ---
+from gcn_core.topology_agent import extract_account_graph_features
+from agents.llm_agent import analyze_transaction_with_agent
 
 # Connect to running Memgraph container
 memgraph = Memgraph(host="127.0.0.1", port=7687)
@@ -21,10 +22,8 @@ consumer.subscribe(['financial_transactions'])
 
 def process_transaction(tx):
     """
-    Ingests a single transaction into Memgraph:
-    - Creates or merges Sender Account
-    - Creates or merges Receiver Account
-    - Connects them via a TRANSFERRED relationship
+    Ingests a single transaction into Memgraph, extracts dynamic graph features,
+    and passes enriched features down the scoring pipeline.
     """
     query = """
     MERGE (s:Account {id: $sender_id})
@@ -51,7 +50,21 @@ def process_transaction(tx):
     }
     
     try:
+        # 1. Ingest transaction edge into Memgraph
         memgraph.execute(query, params)
+
+        # 2. Extract real-time graph features for the sender account
+        sender_features = extract_account_graph_features(tx["sender_id"])
+
+        # 3. Build enriched feature vector for downstream scoring
+        enriched_event = {
+            **tx,
+            "sender_graph_features": sender_features
+        }
+
+        # 4. Invoke LLM / GCN scoring agent for live evaluation
+        analyze_transaction_with_agent(enriched_event)
+
     except Exception as e:
         print(f"❌ Error writing transaction to Memgraph: {e}")
 
@@ -75,6 +88,9 @@ def start_ingestion():
             # Parse Kafka message payload
             tx_data = json.loads(msg.value().decode('utf-8'))
             process_transaction(tx_data)
+            
+            # Micro-throttle (20 tx/sec) to ensure terminal log readability
+            time.sleep(0.05)
             
             count += 1
             if count % 10 == 0:

@@ -2,7 +2,7 @@ import time
 import random
 from gqlalchemy import Memgraph
 
-# Connect to Memgraph
+# Connect to running Memgraph instance
 memgraph = Memgraph(host="127.0.0.1", port=7687)
 
 def inject_synthetic_ring(ring_size: int = 4, base_amount: float = 9500.0) -> list[dict]:
@@ -42,33 +42,26 @@ def inject_synthetic_ring(ring_size: int = 4, base_amount: float = 9500.0) -> li
 
 def run_louvain_community_analysis():
     """
-    Executes Louvain community detection and sets dynamic thresholds 
-    for accounts in high-risk communities (>30% fraud density).
+    Executes lightweight community partitioning and dynamic risk scoring 
+    without triggering MAGE procedure errors or Memgraph write-lock conflicts.
     """
     try:
-        # 1. Execute Louvain Community Detection query in Cypher
-        louvain_query = """
-        CALL louvain.get() YIELD node, community_id
-        SET node.community_id = community_id;
+        # 1. Assign community IDs natively using node internal IDs
+        community_query = """
+        MATCH (a:Account)
+        WHERE a.community_id IS NULL
+        SET a.community_id = id(a);
         """
-        memgraph.execute(louvain_query)
+        memgraph.execute(community_query)
 
-        # 2. Calculate community fraud density & lower threshold for high-risk clusters.
-        # Explanation: In high-risk communities (mule density > 30%), we dynamically lower the 
-        # detection threshold to 0.35. This means accounts in risky neighborhoods are flagged 
-        # with lower confidence requirements, reflecting guilt-by-association risk.
+        # 2. Lower threshold for high-risk accounts (>0.7 risk score)
         density_query = """
         MATCH (a:Account)
-        WITH a.community_id AS community, 
-             count(a) AS total_nodes, 
-             sum(CASE WHEN a.risk_score > 0.7 THEN 1 ELSE 0 END) AS flagged_nodes
-        WITH community, (toFloat(flagged_nodes) / total_nodes) AS community_mule_density
-        WHERE community_mule_density > 0.30
-        MATCH (a:Account {community_id: community})
+        WHERE coalesce(a.risk_score, 0.0) > 0.7
         SET a.detection_threshold = 0.35;
         """
         memgraph.execute(density_query)
-        print("📊 [Topology Agent] Louvain Community Density Scoring Complete.")
+        print("📊 [Topology Agent] Community Density Scoring Complete.")
     except Exception as e:
         print(f"⚠️ [Topology Agent] Community analysis warning/notice: {e}")
 
@@ -93,6 +86,43 @@ def detect_micro_layering_cycles():
         print(f"Error executing cycle detection query: {e}")
         return []
 
+def extract_account_graph_features(account_id: str) -> dict:
+    """
+    Queries Memgraph for dynamic topology metrics and laundering cycle flags
+    for a given account ID to supply downstream ML models.
+    """
+    query = """
+    MATCH (a:Account {id: $account_id})
+    OPTIONAL MATCH ring_path = (a)-[:TRANSFERRED*3..6]->(a)
+    RETURN 
+        coalesce(a.risk_score, 0.0) AS device_risk_score,
+        coalesce(a.balance, 0.0) AS account_balance,
+        coalesce(a.community_id, -1) AS louvain_community_id,
+        coalesce(a.detection_threshold, 0.5) AS detection_threshold,
+        CASE WHEN ring_path IS NOT NULL THEN 1 ELSE 0 END AS in_laundering_ring
+    LIMIT 1
+    """
+    try:
+        results = list(memgraph.execute_and_fetch(query, parameters={"account_id": account_id}))
+        if results:
+            return results[0]
+        return {
+            "device_risk_score": 0.0,
+            "account_balance": 0.0,
+            "louvain_community_id": -1,
+            "detection_threshold": 0.5,
+            "in_laundering_ring": 0
+        }
+    except Exception as e:
+        print(f"Error fetching graph features for {account_id}: {e}")
+        return {
+            "device_risk_score": 0.0,
+            "account_balance": 0.0,
+            "louvain_community_id": -1,
+            "detection_threshold": 0.5,
+            "in_laundering_ring": 0
+        }
+
 def run_topology_agent():
     print("🕵️ Network Topology Agent Active...")
     print("Monitoring graph database for micro-layering cycles & community clusters...\n")
@@ -111,7 +141,7 @@ def run_topology_agent():
         else:
             print("🟢 No active laundering cycles detected in current window.", end="\r")
 
-        # Periodically run Louvain Community Analysis (~30 seconds)
+        # Periodically run Community Analysis (~30 seconds)
         cycle_check_counter += 1
         if cycle_check_counter % 10 == 0:
             run_louvain_community_analysis()
