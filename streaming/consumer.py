@@ -2,6 +2,10 @@ import json
 from confluent_kafka import Consumer, KafkaError
 from gqlalchemy import Memgraph
 
+# --- UPDATED MODULAR IMPORTS ---
+from gcn_core.topology_agent import detect_micro_layering_cycles, run_louvain_community_analysis
+from agents.risk_agent import analyze_and_score_accounts
+
 # Connect to running Memgraph container
 memgraph = Memgraph(host="127.0.0.1", port=7687)
 
