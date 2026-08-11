@@ -12,12 +12,14 @@ from gqlalchemy import Memgraph
 from google import genai
 from google.genai import errors
 
-from websocket_manager import manager
-from topology_agent import detect_micro_layering_cycles, run_louvain_community_analysis
-from risk_agent import analyze_and_score_accounts
+# --- UPDATED MODULAR IMPORTS ---
+from streaming.websocket_manager import manager
+from gcn_core.topology_agent import detect_micro_layering_cycles, run_louvain_community_analysis
+from agents.risk_agent import analyze_and_score_accounts
+
+# --- LOCAL DATABASE & AUTH IMPORTS ---
 from database import init_sqlite_db, verify_user_credentials
 from auth import create_access_token, require_admin, get_current_user
-
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
