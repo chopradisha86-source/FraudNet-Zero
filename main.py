@@ -43,7 +43,7 @@ from google.genai import errors
 from streaming.websocket_manager import manager, router as telemetry_router
 from gcn_core.topology_agent import detect_micro_layering_cycles, run_louvain_community_analysis
 from agents.risk_agent import RealTimeRiskAgent
-from containment_agent import run_containment_pipeline
+from agents.containment_agent import run_containment_pipeline
 
 from database import init_sqlite_db, verify_user_credentials
 from auth import create_access_token, require_admin, get_current_user
