@@ -9,47 +9,51 @@ FraudNet-Zero is an end-to-end fraud detection and response platform that combin
 ## Key Features
 
 - **Real-Time Smurfing Detection**
-  Identifies multi-hop transaction loops and smurfing rings (3 to 6-node cycles) within sub-15ms latencies using in-memory graph traversals.
+  Identifies multi-hop transaction loops and smurfing rings (3-to-6-node cycles) using in-memory graph traversals over a live Memgraph instance.
 
 - **Explainable Risk Scoring**
-  Computes sub-5ms transaction risk probabilities using an XGBoost classifier paired with SHAP attributions to highlight exact fraud drivers.
+  Computes transaction risk probabilities using an XGBoost classifier paired with SHAP attributions to highlight exact fraud drivers.
 
 - **Surgical Mathematical Containment**
   Applies the Max-Flow Min-Cut Theorem on transaction subgraphs to sever minimal cut-edges, reducing fraudulent fund flows to mathematically zero — without freezing clean user accounts.
 
 - **Automated Compliance Reporting**
-  Synthesizes isolated fraud metrics and SHAP drivers via the Google Gemini API to generate instant, standardized Suspicious Activity Reports (SAR).
+  Synthesizes isolated fraud metrics and SHAP drivers via the Google Gemini API to generate Suspicious Activity Reports (SAR), with a deterministic local fallback on API failure.
 
 - **Live Visual Operations**
-  Renders real-time dynamic graph updates, red-highlighted cut-edges, and risk analytics on an interactive Cytoscape.js dashboard over WebSockets.
+  Streams real-time graph updates, risk scores, and containment events over WebSockets, with a Streamlit dashboard for live inspection.
+
+---
+
+## Results
+
+The 3-to-6-node cycle detection rule was benchmarked on a labeled synthetic dataset (500 accounts, 15 injected fraud rings, 5 trials — see `benchmarks/eval_fraudnet.py`):
+
+| Metric | Value |
+|---|---|
+| Recall | 100% (± 0.000) |
+| Precision | 44.9% (± 1.4%) |
+| False Positive Rate | 17.3% (± 1.2%) |
+| F1 | 0.620 (± 0.013) |
+
+Recall is structurally guaranteed by the detection rule (injected rings are constructed as cycles). Precision is the meaningful result: on this benchmark, roughly half of flagged accounts are false positives from incidental cycles in the clean transaction graph — this is the direct motivation for the downstream XGBoost + SHAP risk-scoring layer, which filters flagged accounts further before any containment action is taken.
+
+Reproduce with:
+```bash
+python benchmarks/eval_fraudnet.py
+```
 
 ---
 
 ## System Architecture
 
-FraudNet-Zero operates as a five-stage pipeline:
+FraudNet-Zero operates as a multi-agent pipeline:
 
-1. **Graph Topology & Ring Extraction** — Memgraph-backed multi-graph modeling of transaction networks; variable-length path matching for cycle detection; Louvain community detection for clustering dense fraud communities.
-2. **Risk Scoring Engine** — XGBoost-based risk classification fused with topological graph features, explained via SHAP values.
-3. **Dynamic Flow Modeling** — Converts flagged subgraphs into capacitated flow networks where edge capacity is inversely weighted by risk score.
-4. **Containment Engine** — Runs Edmonds-Karp / Ford-Fulkerson max-flow min-cut to identify and sever the minimal set of edges required to zero out fraudulent flow.
-5. **Compliance Agent** — Packages cut-edge data, risk scores, and SHAP drivers into a structured prompt, processed by the Gemini API to auto-generate SAR documentation.
-
----
-
-## Mathematical Foundation
-
-| Component | Method |
-|---|---|
-| Ring Extraction | Variable-length cycle detection, `Cycle(a) = {P = (a, v_1, ..., v_{k-1}, a)}` |
-| Community Detection | Louvain Modularity Maximization (Q) |
-| Risk Scoring | XGBoost ensemble, sigmoid-activated: `R(X_i) = σ(Σ f_m(X_i))` |
-| Explainability | SHAP values: `φ_j = Σ_{S⊆F\{j}} [weight] * [f_x(S∪{j}) - f_x(S)]` |
-| Edge Capacity | `c(u, v) = B_u / (1 + α·R(u, v))` |
-| Containment | Max-Flow Min-Cut Theorem via Edmonds-Karp |
-| Reporting | Gemini API structured JSON generation |
-
-> Full derivations and formulas are documented in [`METHODOLOGY.md`](./METHODOLOGY.md).
+1. **Topology Agent** (`gcn_core/topology_agent.py`) — Memgraph-backed cycle detection (3-to-6-node rings), Louvain-style community clustering, and subgraph extraction for containment.
+2. **Risk Agent** (`agents/risk_agent.py`) — XGBoost-based risk scoring fused with graph-topology features, explained via SHAP TreeExplainer.
+3. **Containment Agent** (`agents/containment_agent.py`) — Builds risk-weighted flow graphs and computes Max-Flow Min-Cut (NetworkX / Edmonds-Karp) to identify the minimal edge set to sever.
+4. **Compliance Agent** (`agents/llm_agent.py`) — Packages cut-edge data, risk scores, and SHAP drivers into a prompt processed by the Gemini API to generate SAR documentation, with a local fallback.
+5. **Streaming Layer** (`streaming/`) — Kafka producer/consumer ingesting transactions (synthetic + PaySim-derived) into Memgraph, and a WebSocket connection manager broadcasting live events to the dashboard.
 
 ---
 
@@ -58,63 +62,69 @@ FraudNet-Zero operates as a five-stage pipeline:
 | Layer | Technology |
 |---|---|
 | Graph Database | Memgraph |
+| Streaming / Ingestion | Kafka (confluent-kafka) |
 | ML / Risk Scoring | XGBoost, SHAP |
-| Flow Optimization | Edmonds-Karp (Max-Flow Min-Cut) |
+| Flow Optimization | NetworkX (Max-Flow Min-Cut / Edmonds-Karp) |
 | Compliance / SAR Generation | Google Gemini API |
-| Real-Time Dashboard | Cytoscape.js + WebSockets |
-| Backend | (specify: e.g., Python / FastAPI / Node.js) |
+| Backend API | FastAPI, WebSockets |
+| Dashboard | Streamlit |
+| Auth | JWT (role-based: Admin / Analyst) |
 
 ---
 
 ## Getting Started
 
 ### Prerequisites
-- Memgraph instance running and accessible
-- Python 3.10+ (or specify your runtime)
+- Docker (for Memgraph and Kafka via `docker-compose.yml`)
+- Python 3.10+
 - Google Gemini API key
-- Node.js (for the Cytoscape.js dashboard, if applicable)
 
 ### Installation
 ```bash
-git clone <repo-url>
+git clone https://github.com/chopradisha86/fraudnet-zero.git
 cd fraudnet-zero
 pip install -r requirements.txt
+docker-compose up -d
 ```
 
 ### Configuration
-Create a `.env` file with:
+Create a `.env` file (never commit this — see `.env.example`):
 ```
-MEMGRAPH_URI=bolt://localhost:7687
 GEMINI_API_KEY=your_api_key_here
-WEBSOCKET_PORT=8080
+FRONTEND_ORIGINS=http://localhost:3000
 ```
 
 ### Running
 ```bash
-python main.py
+python main.py          # FastAPI backend + WebSocket server
+streamlit run app.py    # Dashboard
 ```
-Then open the dashboard at `http://localhost:<port>` to view live graph updates and containment actions.
 
 ---
 
 ## Project Structure
 ```
 fraudnet-zero/
-├── graph/              # Memgraph queries, cycle & Louvain clustering logic
-├── risk_engine/         # XGBoost model training/inference + SHAP explainability
-├── containment/          # Max-flow min-cut engine
-├── compliance_agent/     # Gemini API SAR generation
-├── dashboard/            # Cytoscape.js + WebSocket frontend
-├── METHODOLOGY.md        # Full mathematical documentation
+├── agents/              # risk_agent.py, containment_agent.py, llm_agent.py
+├── gcn_core/             # topology_agent.py — cycle detection & subgraph extraction
+├── streaming/            # Kafka producer/consumer, WebSocket connection manager
+├── benchmarks/           # eval_fraudnet.py — detection accuracy evaluation
+├── query_modules/        # Memgraph query modules
+├── reports/              # Generated SAR reports (.md)
+├── main.py               # FastAPI application entrypoint
+├── app.py                # Streamlit dashboard
+├── auth.py                # JWT auth & role-based access control
+├── database.py            # SQLite user store
+├── docker-compose.yml      # Memgraph + Kafka services
 └── README.md
 ```
 
 ---
 
 ## Disclaimer
-FraudNet-Zero is a decision-support and containment automation system. Generated SAR documents and containment actions should be reviewed by qualified compliance personnel before regulatory submission or account-level enforcement.
+FraudNet-Zero is a decision-support and containment automation prototype built for independent research and portfolio purposes. Detection thresholds, benchmark results, and generated SAR documents have not been validated against real financial data and should not be used for actual regulatory or compliance decisions without expert review.
 
 ---
 
 ## License
-Specify your license here (e.g., MIT, Apache 2.0, Proprietary).
+MIT
