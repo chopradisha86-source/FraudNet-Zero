@@ -9,9 +9,6 @@ memgraph = Memgraph(host="127.0.0.1", port=7687)
 
 class RealTimeRiskAgent:
     def __init__(self, model_path: str = None):
-        self.model = self._load_or_create_model(model_path)
-        # Initialize SHAP TreeExplainer for exact dynamic feature attributions
-        self.explainer = shap.TreeExplainer(self.model)
         self.feature_names = [
             "Graph Ring Topology",
             "Transaction Velocity Spike",
@@ -19,6 +16,13 @@ class RealTimeRiskAgent:
             "Burst Ratio Anomaly",
             "Account Dormancy Reactivation"
         ]
+        self.model = self._load_or_create_model(model_path)
+        
+        # Safe SHAP explainer fallback to support both XGBoost base_score array formats
+        try:
+            self.explainer = shap.TreeExplainer(self.model)
+        except Exception:
+            self.explainer = shap.Explainer(self.model)
 
     def _load_or_create_model(self, model_path: str):
         """Loads a pre-trained XGBoost model or initializes a trained baseline Booster."""
@@ -35,7 +39,7 @@ class RealTimeRiskAgent:
         X_dummy = np.random.rand(100, 5)
         # Formulate non-linear synthetic fraud pattern target label
         y_dummy = (X_dummy[:, 0] * 0.45 + X_dummy[:, 1] * 0.35 + X_dummy[:, 2] * 0.20 > 0.5).astype(int)
-        dtrain = xgb.DMatrix(X_dummy, label=y_dummy, feature_names=self.feature_names if hasattr(self, 'feature_names') else None)
+        dtrain = xgb.DMatrix(X_dummy, label=y_dummy, feature_names=self.feature_names)
         
         params = {
             'objective': 'binary:logistic',
@@ -48,15 +52,22 @@ class RealTimeRiskAgent:
 
     def calculate_shap_attributions(self, feature_vector: list) -> list:
         """
-        Computes dynamic SHAP values using TreeExplainer for exact ML model explainability.
+        Computes dynamic SHAP values using TreeExplainer/Explainer fallback.
         Returns sorted top feature contributions as percentage impacts.
         """
         dmatrix = xgb.DMatrix([feature_vector], feature_names=self.feature_names)
-        shap_values = self.explainer.shap_values(dmatrix)[0]
+        
+        try:
+            shap_raw = self.explainer.shap_values(dmatrix)
+        except Exception:
+            shap_raw = self.explainer(dmatrix).values
+
+        # Handle 1D vs 2D return output shapes cleanly
+        shap_values = shap_raw[0] if getattr(shap_raw, 'ndim', 2) > 1 else shap_raw
         
         # Calculate percentage impact based on absolute SHAP values
         abs_shap = np.abs(shap_values)
-        total_shap = np.sum(abs_shap) if np.sum(abs_shap) > 0 else 1.0
+        total_shap = float(np.sum(abs_shap)) if np.sum(abs_shap) > 0 else 1.0
         
         features = []
         for idx, name in enumerate(self.feature_names):
@@ -68,7 +79,7 @@ class RealTimeRiskAgent:
                 "percentage": f"{round(percentage, 1)}%"
             })
 
-        # Sort features by highest impact score
+        # Sort features by highest absolute impact score
         return sorted(features, key=lambda x: abs(x["impact_score"]), reverse=True)[:5]
 
     def predict_risk_score(self, feature_vector: list) -> float:
@@ -128,12 +139,19 @@ class RealTimeRiskAgent:
                 else:
                     risk_level = "LOW"
 
-                # Persist computed dynamic scores back to Memgraph database node
-                update_query = f"""
-                MATCH (a:Account {{id: '{account_id}'}})
-                SET a.risk_score = {risk_score}, a.risk_level = '{risk_level}'
+                # Parameterized query execution to prevent execution syntax bugs
+                update_query = """
+                MATCH (a:Account {id: $account_id})
+                SET a.risk_score = $risk_score, a.risk_level = $risk_level
                 """
-                memgraph.execute(update_query)
+                memgraph.execute(
+                    update_query, 
+                    parameters={
+                        "account_id": str(account_id), 
+                        "risk_score": float(risk_score), 
+                        "risk_level": str(risk_level)
+                    }
+                )
 
                 processed_scores.append({
                     "account_id": account_id,
