@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordBearer
 import jwt
 from database import verify_user_credentials
 
-SECRET_KEY = "fraudnet_zero_enterprise_jwt_secret_key"
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "fraudnet_zero_enterprise_jwt_secret_key")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 120
 
