@@ -1,0 +1,49 @@
+{
+  "dataset": "PaySim (real, from streaming/producer.py's transactions.csv)",
+  "full_dataset_rows": 6362620,
+  "full_dataset_fraud_count": 8213,
+  "full_dataset_fraud_rate_pct": 0.1291,
+  "sample_rows": 58213,
+  "sample_fraud_count": 8213,
+  "note": "Sampled subset (all fraud + 50k random legit) for tractable training. Metrics below reflect the TEST split of this sample, not the full 6.36M-row population.",
+  "before": {
+    "accuracy": 0.9815,
+    "f1": 0.9343,
+    "precision": 0.9375,
+    "recall": 0.9312,
+    "pr_auc": 0.9845,
+    "roc_auc": 0.997,
+    "confusion_matrix": [
+      [
+        9899,
+        102
+      ],
+      [
+        113,
+        1529
+      ]
+    ],
+    "model_size_bytes": 34818,
+    "inference_latency_ms": 0.3384
+  },
+  "after": {
+    "accuracy": 0.9792,
+    "f1": 0.9309,
+    "precision": 0.8759,
+    "recall": 0.9933,
+    "pr_auc": 0.9893,
+    "roc_auc": 0.9982,
+    "confusion_matrix": [
+      [
+        9770,
+        231
+      ],
+      [
+        11,
+        1631
+      ]
+    ],
+    "model_size_bytes": 419050,
+    "inference_latency_ms": 0.3892
+  }
+}
