@@ -1,15 +1,4 @@
-"""
-DIFF FROM ORIGINAL: `calculate_cost_weighted_min_cut` is unchanged.
-Added `build_graph_from_subgraph_rows` and `run_containment_pipeline`.
 
-FIX (integration gap): the min-cut function existed but nothing in the
-API layer ever called it — `/api/v1/containment/execute` just froze
-whatever account_ids the frontend sent, with no actual graph analysis
-behind it. `run_containment_pipeline` is the missing glue: it pulls a
-live subgraph from Memgraph (via topology_agent) and runs the min-cut
-against it, returning cut-edges the frontend can render in red before
-anything is frozen.
-"""
 import networkx as nx
 
 

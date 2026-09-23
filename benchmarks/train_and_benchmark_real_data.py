@@ -2,7 +2,7 @@
 FraudNet-Zero — Risk Model: Real-Data Before/After Benchmark (PaySim)
 ========================================================================
 
-WHAT THIS IS (READ BEFORE CITING THIS ANYWHERE)
+WHAT THIS IS
 ------------------------------------------------
 A real before/after training benchmark on the actual PaySim transactions.csv
 dataset referenced by streaming/producer.py -- 6.36M real simulated mobile

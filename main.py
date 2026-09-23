@@ -1,31 +1,4 @@
-"""
-DIFF FROM ORIGINAL main.py — fixes applied:
 
-1. `from agents.risk_agent import analyze_and_score_accounts` was importing
-   a function that doesn't exist (it's a method on RealTimeRiskAgent).
-   -> Now imports the class and instantiates a module-level singleton.
-
-2. `streaming/websocket_manager.py`'s REST endpoints (/api/stats,
-   /api/suspects, /api/sar/{id}) were defined on a second, never-run
-   FastAPI app. -> Now imported as `router` and mounted with
-   app.include_router().
-
-3. CORS used allow_origins=["*"] with allow_credentials=True, which
-   browsers reject. -> Now reads explicit origins from env (defaults to
-   the Next.js dev server).
-
-4. Frontend spec calls for `ws://localhost:8000/ws`; only `/ws/telemetry`
-   existed. -> Both routes now exist and share one handler.
-
-5. Min-cut containment logic existed in containment_agent.py but was
-   never wired to an endpoint. -> New POST /api/v1/containment/analyze
-   runs it and broadcasts a GRAPH_UPDATE event so the frontend can
-   highlight cut-edges in red before anything is frozen.
-
-6. Added a catch-all exception handler so unhandled errors return JSON
-   instead of a bare 500 with no CORS headers (which the browser would
-   report as a CORS failure, masking the real error).
-"""
 import os
 import asyncio
 import logging

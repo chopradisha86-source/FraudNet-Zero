@@ -1,17 +1,4 @@
-"""
-DIFF FROM ORIGINAL: only `extract_subgraph_for_containment` changed.
 
-FIX (integration gap): the original query returned `source_risk` /
-`target_risk` but not `source_balance` or `is_suspicious`. Those two
-fields are exactly what `containment_agent.calculate_cost_weighted_min_cut`
-reads via `data.get("source_balance", ...)` / `data.get("is_suspicious", ...)`.
-Without them every edge silently fell back to default capacity (1000.0),
-so the min-cut was never actually risk-weighted in practice.
-
-Everything else in this file is unchanged from your original
-topology_agent.py — copy this whole file over the old one, or just
-replace the `extract_subgraph_for_containment` function.
-"""
 import time
 from gqlalchemy import Memgraph
 
