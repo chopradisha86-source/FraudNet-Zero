@@ -2,7 +2,7 @@
 
 **Real-Time Graph-Based Fraud Detection & Surgical Containment System**
 
-FraudNet-Zero is an end-to-end fraud detection and response platform that combines real-time graph analytics, explainable machine learning, and network flow theory to detect money laundering rings and surgically contain fraudulent fund flows — without freezing clean user accounts.
+FraudNet-Zero is an end-to-end fraud detection and response platform that combines real-time graph analytics, explainable machine learning, and network flow theory to detect money laundering rings and surgically contain fraudulent fund flows without freezing clean user accounts.
 
 ---
 
