@@ -9,7 +9,7 @@ FraudNet-Zero is an end-to-end fraud detection and response platform that combin
 ## Key Features
 
 - **Real-Time Smurfing Detection**
-  Identifies multi-hop transaction loops and smurfing rings (3-to-6-node cycles) using in-memory graph traversals over a live Memgraph instance.
+  Identifies multi-hop transaction loops and smurfing rings (3 to 6-node cycles) using in-memory graph traversals over a live Memgraph instance.
 
 - **Explainable Risk Scoring**
   Computes transaction risk probabilities using an XGBoost classifier paired with SHAP attributions to highlight exact fraud drivers.
