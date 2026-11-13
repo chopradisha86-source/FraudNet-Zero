@@ -1,4 +1,4 @@
-# FraudNet-Zero
+# FraudNet Zero
 
 **Real-Time Graph Based Fraud Detection & Surgical Containment System**
 
